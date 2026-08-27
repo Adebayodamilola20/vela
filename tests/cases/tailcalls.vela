@@ -1,0 +1,40 @@
+-- Tail calls must not grow the stack.
+--
+-- Every loop here runs far past any plausible stack depth, so if frames were
+-- being retained these would crash rather than print.
+
+import List
+
+let rec count n acc = if n <= 0 then acc else count (n - 1) (acc + 1)
+
+let rec sum_to n acc = if n <= 0 then acc else sum_to (n - 1) (acc + n)
+
+-- A tail call through a `match` arm is still a tail call.
+let rec length xs acc =
+  match xs {
+    [] -> acc,
+    _ :: rest -> length rest (acc + 1),
+  }
+
+-- ...and so is one through both branches of an `if` nested in a `let`.
+let rec collatz n steps =
+  if n == 1 then
+    steps
+  else
+    let next = if n % 2 == 0 then n / 2 else 3 * n + 1 in
+    collatz next (steps + 1)
+
+-- Mutual tail recursion has to work too: the frame is reused across a call to
+-- a *different* function, not just a self-call.
+let rec ping n = if n <= 0 then "done" else pong (n - 1)
+and pong n = if n <= 0 then "done" else ping (n - 1)
+
+let main () =
+  print (int_to_string (count 50000 0));
+  print (int_to_string (sum_to 50000 0));
+  print (int_to_string (length (List.range 0 30000) 0));
+  print (int_to_string (collatz 27 0));
+  print (ping 50000);
+
+  -- fold_left is implemented with a tail-recursive helper.
+  print (int_to_string (List.fold_left (\a b -> a + b) 0 (List.range 1 50001)))

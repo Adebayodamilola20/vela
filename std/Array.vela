@@ -1,0 +1,72 @@
+-- Fixed-length arrays with constant-time indexing.
+--
+-- Vela has no mutable references, so `set` returns a *new* array rather than
+-- modifying the old one. That makes arrays worth reaching for when you need
+-- random access to something you mostly read — `List.get` walks the list,
+-- `Array.get` does not — and not much use as a mutable buffer.
+
+import List
+import Option
+
+-- ==========================================================================
+-- Building
+-- ==========================================================================
+
+-- `new n x` is an array of `n` copies of `x`. Panics on a negative length.
+extern new : Int -> a -> [a] = "array_new"
+
+extern from_list : [a] -> [a] = "array_from_list"
+extern to_list : [a] -> [a] = "array_to_list"
+
+extern length : [a] -> Int = "array_length"
+
+-- ==========================================================================
+-- Access
+-- ==========================================================================
+
+extern _get : [a] -> Int -> a = "array_get"
+extern _set : [a] -> Int -> a -> [a] = "array_set"
+
+-- Safe accessors: out-of-range gives `None` rather than stopping the program.
+let get i arr =
+  if i < 0 || i >= length arr then Option.None else Option.Some (_get arr i)
+
+let set i value arr =
+  if i < 0 || i >= length arr then Option.None else Option.Some (_set arr i value)
+
+-- Unchecked versions, for when the index is already known to be good.
+let get_unchecked i arr = _get arr i
+let set_unchecked i value arr = _set arr i value
+
+let is_empty arr = length arr == 0
+
+let first arr = get 0 arr
+let last arr = get (length arr - 1) arr
+
+-- ==========================================================================
+-- Transforming
+-- ==========================================================================
+
+-- These go through lists, so they are O(n) with a real constant factor. For
+-- anything hot, work on the list directly and convert once at the end.
+
+let map f arr = from_list (List.map f (to_list arr))
+
+let filter pred arr = from_list (List.filter pred (to_list arr))
+
+let fold_left f init arr = List.fold_left f init (to_list arr)
+
+let reverse arr = from_list (List.reverse (to_list arr))
+
+let sort arr = from_list (List.sort (to_list arr))
+let sort_by cmp arr = from_list (List.sort_by cmp (to_list arr))
+
+-- ==========================================================================
+-- Searching
+-- ==========================================================================
+
+let find pred arr = List.find pred (to_list arr)
+let find_index pred arr = List.find_index pred (to_list arr)
+let any pred arr = List.any pred (to_list arr)
+let all pred arr = List.all pred (to_list arr)
+let member x arr = List.member x (to_list arr)

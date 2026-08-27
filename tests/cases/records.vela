@@ -1,0 +1,51 @@
+-- Records, functional update, and row polymorphism.
+
+import Float
+
+type alias Point = { x : Float, y : Float }
+
+-- `dist` never names a record type: it accepts anything with `x` and `y` of
+-- the right type, and the row variable absorbs whatever else is there.
+let dist p = Float.sqrt (p.x *. p.x +. p.y *. p.y)
+
+let magnitude_sum a b = dist a +. dist b
+
+-- Field order does not matter, here or at the call site.
+let make x y = { x = x, y = y }
+
+let shift dx p = { p | x = p.x +. dx }
+
+let label named = named.name ^ " at " ^ float_to_string (dist named)
+
+let main () =
+  let origin = { x = 0.0, y = 0.0 } in
+  let unit = { x = 3.0, y = 4.0 } in
+
+  print (float_to_string (dist origin));
+  print (float_to_string (dist unit));
+
+  -- Written in the other order: still the same record.
+  print (float_to_string (dist { y = 4.0, x = 3.0 }));
+
+  -- Row polymorphism: extra fields are simply carried along.
+  let tagged = { x = 3.0, y = 4.0, name = "corner", weight = 12 } in
+  print (float_to_string (dist tagged));
+  print (label tagged);
+
+  -- Functional update produces a new record; the original is untouched.
+  let moved = shift 3.0 unit in
+  print (float_to_string moved.x);
+  print (float_to_string unit.x);
+
+  -- Update preserves the extra fields too.
+  let moved_tagged = shift 1.0 tagged in
+  print (moved_tagged.name);
+  print (float_to_string moved_tagged.x);
+
+  print (float_to_string (magnitude_sum unit tagged));
+
+  -- Records nest, and projection chains.
+  let segment = { from = origin, to = unit } in
+  print (float_to_string segment.to.y);
+
+  print (show (make 1.0 2.0))

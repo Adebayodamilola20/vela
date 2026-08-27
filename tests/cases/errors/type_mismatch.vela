@@ -1,0 +1,4 @@
+-- `+` is Int -> Int -> Int; floats need `+.`.
+
+let main () =
+  print (int_to_string (1 + 2.0))

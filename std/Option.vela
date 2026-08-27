@@ -1,0 +1,100 @@
+-- An value that may be absent.
+--
+-- Vela has no null, so a function that can fail to produce an answer says so
+-- in its type and the compiler makes every caller handle both cases.
+
+type Option a
+  = None
+  | Some a
+
+-- ==========================================================================
+-- Building
+-- ==========================================================================
+
+let some x = Some x
+let none = None
+
+-- ==========================================================================
+-- Asking
+-- ==========================================================================
+
+let is_some opt = match opt { Some _ -> True, None -> False }
+let is_none opt = match opt { Some _ -> False, None -> True }
+
+-- ==========================================================================
+-- Getting the value out
+-- ==========================================================================
+
+-- The safe accessor: supply what to use when there is nothing.
+let with_default fallback opt =
+  match opt {
+    Some x -> x,
+    None -> fallback,
+  }
+
+-- Like `with_default`, but the fallback is only computed when it is needed.
+let with_default_lazy make opt =
+  match opt {
+    Some x -> x,
+    None -> make (),
+  }
+
+-- Stops the program on `None`. Reach for `with_default` first; this exists for
+-- the cases where `None` genuinely means the program is broken.
+let force message opt =
+  match opt {
+    Some x -> x,
+    None -> panic message,
+  }
+
+-- ==========================================================================
+-- Transforming
+-- ==========================================================================
+
+let map f opt =
+  match opt {
+    Some x -> Some (f x),
+    None -> None,
+  }
+
+let map2 f a b =
+  match (a, b) {
+    (Some x, Some y) -> Some (f x y),
+    _ -> None,
+  }
+
+-- `and_then` is `map` for functions that themselves return an Option, so the
+-- result does not end up nested.
+let and_then f opt =
+  match opt {
+    Some x -> f x,
+    None -> None,
+  }
+
+let or_else fallback opt =
+  match opt {
+    Some x -> Some x,
+    None -> fallback,
+  }
+
+let filter pred opt =
+  match opt {
+    Some x -> if pred x then Some x else None,
+    None -> None,
+  }
+
+-- ==========================================================================
+-- Consuming
+-- ==========================================================================
+
+let fold on_none on_some opt =
+  match opt {
+    Some x -> on_some x,
+    None -> on_none,
+  }
+
+let to_list opt =
+  match opt {
+    Some x -> [x],
+    None -> [],
+  }

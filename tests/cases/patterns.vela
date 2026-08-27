@@ -1,0 +1,91 @@
+-- Pattern matching: nesting, guards, aliases, literals, records.
+
+type Colour = Red | Green | Blue
+type Tree a = Leaf | Node (Tree a) a (Tree a)
+
+let name c =
+  match c {
+    Red -> "red",
+    Green -> "green",
+    Blue -> "blue",
+  }
+
+-- Nested constructor patterns compile to a decision tree, not a chain of tests.
+let rec depth t =
+  match t {
+    Leaf -> 0,
+    Node l _ r -> 1 + max (depth l) (depth r),
+  }
+
+let rec to_list t =
+  match t {
+    Leaf -> [],
+    Node l v r -> to_list l ++ [v] ++ to_list r,
+  }
+
+let rec insert x t =
+  match t {
+    Leaf -> Node Leaf x Leaf,
+    Node l v r ->
+      if x < v then Node (insert x l) v r
+      else if x > v then Node l v (insert x r)
+      else t,
+  }
+
+-- Guards: the first arm whose pattern matches *and* whose guard holds.
+let classify n =
+  match n {
+    0 -> "zero",
+    x if x < 0 -> "negative",
+    x if x % 2 == 0 -> "positive even",
+    _ -> "positive odd",
+  }
+
+-- List patterns, including cons and a fixed-length form.
+let describe xs =
+  match xs {
+    [] -> "empty",
+    [x] -> "one: " ^ int_to_string x,
+    [x, y] -> "two: " ^ int_to_string (x + y),
+    x :: _ :: _ -> "many, starting " ^ int_to_string x,
+  }
+
+-- An alias binds the whole value while still destructuring it.
+let first_pair pairs =
+  match pairs {
+    [] -> "none",
+    ((a, b) as p) :: _ -> show p ^ " sums to " ^ int_to_string (a + b),
+  }
+
+-- Record patterns match open records: extra fields are fine.
+let origin_distance point =
+  match point {
+    { x = 0, y = 0 } -> "at the origin",
+    { x = 0 } -> "on the y axis",
+    { y = 0 } -> "on the x axis",
+    _ -> "elsewhere",
+  }
+
+let main () =
+  print (name Green);
+
+  let tree = insert 5 (insert 2 (insert 8 (insert 1 Leaf))) in
+  print (int_to_string (depth tree));
+  print (show (to_list tree));
+
+  print (classify 0);
+  print (classify (0 - 4));
+  print (classify 4);
+  print (classify 7);
+
+  print (describe []);
+  print (describe [1]);
+  print (describe [1, 2]);
+  print (describe [1, 2, 3]);
+
+  print (first_pair [(3, 4), (5, 6)]);
+
+  print (origin_distance { x = 0, y = 0 });
+  print (origin_distance { x = 0, y = 3 });
+  print (origin_distance { x = 3, y = 0 });
+  print (origin_distance { x = 3, y = 3 })

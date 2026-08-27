@@ -1,0 +1,49 @@
+-- Closures, partial application, and higher-order functions.
+
+import List
+
+let add a b = a + b
+
+-- Partial application: `add 10` is a function, not an error.
+let add10 = add 10
+
+let twice f x = f (f x)
+
+let compose f g = \x -> f (g x)
+
+-- A counter whose state lives in the closure rather than a mutable cell.
+let make_adder n = \x -> x + n
+
+-- Mutual recursion in a `let rec ... and` group.
+let rec is_even n = if n == 0 then True else is_odd (n - 1)
+and is_odd n = if n == 0 then False else is_even (n - 1)
+
+let main () =
+  print (int_to_string (add10 5));
+  print (int_to_string (twice add10 0));
+  print (int_to_string (twice (\x -> x * x) 3));
+
+  let inc = make_adder 1 in
+  let dec = make_adder (0 - 1) in
+  print (int_to_string (inc 41));
+  print (int_to_string (dec 43));
+
+  -- Composition, both by operator and by hand.
+  let f = compose inc inc in
+  print (int_to_string (f 40));
+  print (int_to_string ((inc >> inc >> inc) 39));
+  print (int_to_string ((inc << inc << inc) 39));
+
+  -- Closures capturing a loop variable each keep their own copy.
+  let adders = List.map make_adder [1, 2, 3] in
+  print (show (List.map (\g -> g 10) adders));
+
+  print (show (is_even 10));
+  print (show (is_odd 10));
+
+  -- Functions as ordinary values in data structures.
+  let ops = [(\x -> x + 1), (\x -> x * 2), (\x -> x - 3)] in
+  print (show (List.map (\g -> g 12) ops));
+
+  -- Folding with a function built at runtime.
+  print (int_to_string (List.fold_left add 0 (List.range 1 101)))

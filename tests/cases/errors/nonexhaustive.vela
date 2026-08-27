@@ -1,0 +1,11 @@
+-- A non-exhaustive match is an error, not a warning.
+
+type Colour = Red | Green | Blue
+
+let name c =
+  match c {
+    Red -> "red",
+    Green -> "green",
+  }
+
+let main () = print (name Blue)

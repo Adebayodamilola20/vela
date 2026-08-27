@@ -1,0 +1,70 @@
+-- 64-bit signed integers.
+--
+-- Arithmetic wraps on overflow rather than trapping or promoting, so
+-- `max_value + 1` is `min_value`. The bit operations are here rather than as
+-- operators because they are rare enough not to earn syntax.
+
+import Option
+
+-- ==========================================================================
+-- Bounds
+-- ==========================================================================
+
+let max_value = 9223372036854775807
+let min_value = 0 - 9223372036854775807 - 1
+
+-- ==========================================================================
+-- Arithmetic
+-- ==========================================================================
+
+extern abs : Int -> Int = "int_abs"
+
+let negate n = 0 - n
+
+let signum n = if n > 0 then 1 else if n < 0 then 0 - 1 else 0
+
+let is_even n = n % 2 == 0
+let is_odd n = n % 2 != 0
+
+-- `/` truncates toward zero, so `-7 / 2` is `-3`. These give the flooring
+-- forms, where the remainder always has the sign of the divisor.
+let div_floor a b =
+  let q = a / b in
+  if (a % b != 0) && ((a < 0) != (b < 0)) then q - 1 else q
+
+let mod_floor a b =
+  let r = a % b in
+  if r != 0 && ((r < 0) != (b < 0)) then r + b else r
+
+-- Safe division: `None` instead of a crash on a zero divisor.
+let checked_div a b = if b == 0 then Option.None else Option.Some (a / b)
+let checked_mod a b = if b == 0 then Option.None else Option.Some (a % b)
+
+let rec gcd a b =
+  let x = abs a in
+  let y = abs b in
+  if y == 0 then x else gcd y (x % y)
+
+let lcm a b =
+  if a == 0 || b == 0 then 0 else abs (a * b) / gcd a b
+
+let clamp low high n = min high (max low n)
+
+-- ==========================================================================
+-- Bits
+-- ==========================================================================
+
+extern shift_left : Int -> Int -> Int = "int_shl"
+extern shift_right : Int -> Int -> Int = "int_shr"
+extern bit_and : Int -> Int -> Int = "int_and"
+extern bit_or : Int -> Int -> Int = "int_or"
+extern bit_xor : Int -> Int -> Int = "int_xor"
+
+let bit_not n = 0 - n - 1
+
+-- ==========================================================================
+-- Conversion
+-- ==========================================================================
+
+let to_string n = int_to_string n
+let to_float n = int_to_float n

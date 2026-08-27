@@ -1,0 +1,140 @@
+-- Text.
+--
+-- Strings are UTF-8 and immutable. Indices count *characters*, not bytes, so
+-- `length "héllo"` is 5 and `get 1` gives back `"é"`.
+
+import List
+import Option
+
+-- ==========================================================================
+-- Basics
+-- ==========================================================================
+
+extern length : String -> Int = "string_length"
+
+let is_empty s = length s == 0
+
+-- ==========================================================================
+-- Access
+-- ==========================================================================
+
+extern _get : String -> Int -> String = "string_get"
+extern _code_at : String -> Int -> Int = "string_code_at"
+
+-- Safe indexing: `None` rather than a crash when the index is out of range.
+let get i s =
+  if i < 0 then Option.None
+  else if i >= length s then Option.None
+  else Option.Some (_get s i)
+
+let code_at i s =
+  if i < 0 then Option.None
+  else if i >= length s then Option.None
+  else Option.Some (_code_at s i)
+
+-- Clamps rather than failing: `slice` past either end gives what exists.
+extern slice : String -> Int -> Int -> String = "string_slice"
+
+let take n s = slice s 0 n
+let drop n s = slice s n (length s)
+
+-- ==========================================================================
+-- Combining
+-- ==========================================================================
+
+let append a b = a ^ b
+
+let concat parts = List.fold_left (\acc part -> acc ^ part) "" parts
+
+extern join : [String] -> String -> String = "string_join"
+
+let rec repeat n s =
+  let rec go i acc = if i <= 0 then acc else go (i - 1) (acc ^ s)
+  in go n ""
+
+-- ==========================================================================
+-- Splitting
+-- ==========================================================================
+
+-- Splitting on `""` gives the individual characters.
+extern split : String -> String -> [String] = "string_split"
+
+let chars s = split s ""
+
+let lines s = split s "\n"
+let words s = List.filter (\w -> length w > 0) (split s " ")
+
+-- ==========================================================================
+-- Searching
+-- ==========================================================================
+
+extern _index_of : String -> String -> Int = "string_index_of"
+
+-- `None` when absent, rather than the -1 the primitive returns.
+let index_of needle haystack =
+  let i = _index_of haystack needle in
+  if i < 0 then Option.None else Option.Some i
+
+let contains needle haystack = Option.is_some (index_of needle haystack)
+
+let starts_with prefix s = take (length prefix) s == prefix
+let ends_with suffix s = drop (length s - length suffix) s == suffix
+
+-- ==========================================================================
+-- Transforming
+-- ==========================================================================
+
+extern trim : String -> String = "string_trim"
+extern to_upper : String -> String = "string_upper"
+extern to_lower : String -> String = "string_lower"
+
+extern from_code : Int -> String = "string_from_code"
+
+let reverse s = join (List.reverse (chars s)) ""
+
+let map f s = join (List.map f (chars s)) ""
+let filter pred s = join (List.filter pred (chars s)) ""
+
+-- ==========================================================================
+-- Parsing
+-- ==========================================================================
+
+extern _to_int : String -> Int = "string_to_int"
+extern _to_float : String -> Float = "string_to_float"
+
+-- The primitives panic on bad input; these check first so a parse failure is
+-- an ordinary value the caller can handle.
+let _is_digit c = c >= "0" && c <= "9"
+
+let to_int s =
+  let body = trim s in
+  let digits = if starts_with "-" body then drop 1 body else body in
+  if is_empty digits then
+    Option.None
+  else if List.all _is_digit (chars digits) then
+    Option.Some (_to_int body)
+  else
+    Option.None
+
+let to_float s =
+  let body = trim s in
+  let digits = if starts_with "-" body then drop 1 body else body in
+  let ok c = _is_digit c || c == "." || c == "e" || c == "-" || c == "+" in
+  if is_empty digits then
+    Option.None
+  else if List.all ok (chars digits) then
+    Option.Some (_to_float body)
+  else
+    Option.None
+
+-- ==========================================================================
+-- Padding
+-- ==========================================================================
+
+let pad_left width fill s =
+  let missing = width - length s in
+  if missing <= 0 then s else repeat missing fill ^ s
+
+let pad_right width fill s =
+  let missing = width - length s in
+  if missing <= 0 then s else s ^ repeat missing fill

@@ -1,0 +1,29 @@
+-- Integer and float arithmetic, including the edges.
+
+let main () =
+  print (int_to_string (2 + 3 * 4));
+  print (int_to_string ((2 + 3) * 4));
+  print (int_to_string (17 / 5));
+  print (int_to_string (17 % 5));
+  print (int_to_string (2 ** 10));
+
+  -- Division truncates toward zero, so the remainder takes the dividend's sign.
+  print (int_to_string (0 - 17 / 5));
+  print (int_to_string ((0 - 17) / 5));
+  print (int_to_string ((0 - 17) % 5));
+
+  -- Unary minus binds looser than `**`.
+  print (int_to_string (0 - 2 ** 3));
+
+  -- Ints wrap at 64 bits rather than growing.
+  print (int_to_string (9223372036854775807 + 1));
+
+  print (float_to_string (1.0 +. 2.0));
+  print (float_to_string (10.0 /. 4.0));
+  print (float_to_string (1.0e-3));
+  print (float_to_string (2.5e3));
+
+  -- Numeric literals may carry underscores and other bases.
+  print (int_to_string 1_000_000);
+  print (int_to_string 0xff);
+  print (int_to_string 0b1011)

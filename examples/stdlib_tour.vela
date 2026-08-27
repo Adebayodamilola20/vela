@@ -1,0 +1,58 @@
+-- Exercises the standard library across module boundaries.
+
+import List
+import Option
+import Result
+import String
+import Int
+import Float
+
+let show_option opt =
+  match opt {
+    Option.Some x -> "Some " ^ show x,
+    Option.None -> "None",
+  }
+
+let main () =
+  -- Lists
+  let nums = List.range 1 11 in
+  print ("range 1..11    = " ^ show nums);
+  print ("sum            = " ^ int_to_string (List.sum nums));
+  print ("evens          = " ^ show (List.filter Int.is_even nums));
+  print ("squares        = " ^ show (List.map (\n -> n * n) (List.take 5 nums)));
+  print ("sorted desc    = " ^ show (List.sort_by (flip compare) [3, 1, 4, 1, 5, 9, 2, 6]));
+  print ("zip            = " ^ show (List.zip [1, 2, 3] ["a", "b", "c"]));
+  print ("find > 7       = " ^ show_option (List.find (\n -> n > 7) nums));
+
+  -- Options
+  print ("head []        = " ^ show_option (List.head []));
+  print ("with_default   = " ^ int_to_string (Option.with_default 0 (List.head [])));
+
+  -- Results
+  let parsed = Result.from_option "not a number" (String.to_int "42") in
+  print ("parse \"42\"     = " ^ int_to_string (Result.with_default 0 parsed));
+  let broken = Result.from_option "not a number" (String.to_int "oops") in
+  print ("parse \"oops\"   = " ^ Result.fold identity int_to_string broken);
+
+  -- Strings
+  print ("upper          = " ^ String.to_upper "vela");
+  print ("words          = " ^ show (String.words "the quick brown fox"));
+  print ("join           = " ^ String.join ["a", "b", "c"] "-");
+  print ("reverse        = " ^ String.reverse "stressed");
+  print ("pad_left       = " ^ String.pad_left 8 "." "42");
+
+  -- Numbers
+  print ("gcd 48 18      = " ^ int_to_string (Int.gcd 48 18));
+  print ("div_floor -7 2 = " ^ int_to_string (Int.div_floor (0 - 7) 2));
+  print ("sqrt 2.0       = " ^ float_to_string (Float.sqrt 2.0));
+  print ("round 2.5      = " ^ float_to_string (Float.round 2.5));
+
+  -- Pipelines
+  let result =
+    List.range 1 21
+      |> List.filter Int.is_odd
+      |> List.map (\n -> n * n)
+      |> List.filter (\n -> n > 50)
+      |> List.sum
+  in
+  print ("pipeline       = " ^ int_to_string result)

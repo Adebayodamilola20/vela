@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Compiled images and VM build output
+build/
+vm/build/
+vm/vela
+*.velac
+
+# Generated from velac/prims.py by `python3 -m velac.opcodes`
+vm/src/opcodes.h
+
+# Editors and OS
+.DS_Store
+*.swp
+.idea/
+.vscode/

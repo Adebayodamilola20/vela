@@ -1,0 +1,33 @@
+-- A scratch program exercising several features at once.
+
+type Shape
+  = Circle Float
+  | Rect Float Float
+
+let rec fact n = if n <= 1 then 1 else n * fact (n - 1)
+
+-- Tail recursive, so this must run in constant stack.
+let rec count_to n acc = if n <= 0 then acc else count_to (n - 1) (acc + 1)
+
+let area s =
+  match s {
+    Circle r -> 3.14159 *. r *. r,
+    Rect w h -> w *. h,
+  }
+
+let describe s =
+  match s {
+    Circle r -> "circle of radius " ^ float_to_string r,
+    Rect w h -> if w == h then "square" else "rectangle",
+  }
+
+let main () =
+  print (int_to_string (fact 10));
+  print (int_to_string (count_to 100000 0));
+  print (float_to_string (area (Circle 2.0)));
+  print (float_to_string (area (Rect 3.0 4.0)));
+  print (describe (Rect 5.0 5.0));
+  print (show (1, "two", 3.0));
+  print (show [1, 2, 3]);
+  print (show { x = 1, y = 2 });
+  print (show (Circle 1.5))

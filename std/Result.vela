@@ -1,0 +1,93 @@
+-- A value or an explanation of why there isn't one.
+--
+-- `Option` says something is missing; `Result` says why. Reach for this when
+-- the caller can do something useful with the reason.
+
+import Option
+
+type Result e a
+  = Err e
+  | Ok a
+
+-- ==========================================================================
+-- Building
+-- ==========================================================================
+
+let ok x = Ok x
+let err e = Err e
+
+-- ==========================================================================
+-- Asking
+-- ==========================================================================
+
+let is_ok result = match result { Ok _ -> True, Err _ -> False }
+let is_err result = match result { Ok _ -> False, Err _ -> True }
+
+-- ==========================================================================
+-- Getting the value out
+-- ==========================================================================
+
+let with_default fallback result =
+  match result {
+    Ok x -> x,
+    Err _ -> fallback,
+  }
+
+-- Collapse both sides to one type by saying what to do with each.
+let fold on_err on_ok result =
+  match result {
+    Ok x -> on_ok x,
+    Err e -> on_err e,
+  }
+
+let force result =
+  match result {
+    Ok x -> x,
+    Err e -> panic ("Result.force on an Err: " ^ show e),
+  }
+
+-- ==========================================================================
+-- Transforming
+-- ==========================================================================
+
+let map f result =
+  match result {
+    Ok x -> Ok (f x),
+    Err e -> Err e,
+  }
+
+-- Transform the error instead — useful when adding context as an error
+-- travels up through layers.
+let map_err f result =
+  match result {
+    Ok x -> Ok x,
+    Err e -> Err (f e),
+  }
+
+let and_then f result =
+  match result {
+    Ok x -> f x,
+    Err e -> Err e,
+  }
+
+let or_else fallback result =
+  match result {
+    Ok x -> Ok x,
+    Err _ -> fallback,
+  }
+
+-- ==========================================================================
+-- Converting
+-- ==========================================================================
+
+let to_option result =
+  match result {
+    Ok x -> Option.Some x,
+    Err _ -> Option.None,
+  }
+
+let from_option e opt =
+  match opt {
+    Option.Some x -> Ok x,
+    Option.None -> Err e,
+  }

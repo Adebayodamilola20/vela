@@ -1,0 +1,94 @@
+-- IEEE-754 binary64.
+--
+-- Float arithmetic uses its own operators — `+.`, `-.`, `*.`, `/.` — because
+-- Vela does not overload numeric operators. That keeps inference decidable
+-- without type classes, at the cost of a dot.
+--
+-- Division by zero gives an infinity rather than an error, and `0.0 /. 0.0`
+-- gives NaN, exactly as the hardware does.
+
+-- ==========================================================================
+-- Special values
+-- ==========================================================================
+
+let infinity = 1.0 /. 0.0
+let neg_infinity = (0.0 -. 1.0) /. 0.0
+let nan = 0.0 /. 0.0
+
+-- NaN is the only value that is not equal to itself; that is the test.
+let is_nan x = x != x
+
+let is_infinite x = x == infinity || x == neg_infinity
+let is_finite x = not (is_nan x) && not (is_infinite x)
+
+-- ==========================================================================
+-- Rounding
+-- ==========================================================================
+
+extern floor : Float -> Float = "float_floor"
+extern ceil : Float -> Float = "float_ceil"
+
+-- Round half away from zero, which is what people expect from `round`.
+let round x = if x >= 0.0 then floor (x +. 0.5) else ceil (x -. 0.5)
+
+let truncate x = if x >= 0.0 then floor x else ceil x
+
+-- ==========================================================================
+-- Arithmetic
+-- ==========================================================================
+
+extern abs : Float -> Float = "float_abs"
+extern sqrt : Float -> Float = "float_sqrt"
+extern pow : Float -> Float -> Float = "float_pow"
+
+let negate x = 0.0 -. x
+
+let signum x =
+  if is_nan x then nan
+  else if x > 0.0 then 1.0
+  else if x < 0.0 then 0.0 -. 1.0
+  else x
+
+let clamp low high x =
+  if x < low then low else if x > high then high else x
+
+-- ==========================================================================
+-- Exponentials
+-- ==========================================================================
+
+extern exp : Float -> Float = "float_exp"
+extern log : Float -> Float = "float_log"
+
+let log2 x = log x /. log 2.0
+let log10 x = log x /. log 10.0
+
+-- ==========================================================================
+-- Trigonometry
+-- ==========================================================================
+
+extern sin : Float -> Float = "float_sin"
+extern cos : Float -> Float = "float_cos"
+extern tan : Float -> Float = "float_tan"
+
+let pi = 3.141592653589793
+let tau = 6.283185307179586
+let e = 2.718281828459045
+
+let to_radians degrees = degrees *. pi /. 180.0
+let to_degrees radians = radians *. 180.0 /. pi
+
+-- ==========================================================================
+-- Comparison
+-- ==========================================================================
+
+-- Floats rarely land on an exact value, so compare them with a tolerance.
+let close_enough tolerance a b = abs (a -. b) <= tolerance
+
+let approx_equal a b = close_enough 0.000001 a b
+
+-- ==========================================================================
+-- Conversion
+-- ==========================================================================
+
+let to_string x = float_to_string x
+let to_int x = float_to_int x

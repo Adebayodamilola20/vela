@@ -1,0 +1,4 @@
+-- An unknown name, close enough to a real one to get a suggestion.
+
+let main () =
+  print (int_to_strng 42)

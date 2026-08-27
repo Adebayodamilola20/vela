@@ -1,0 +1,41 @@
+-- N-queens, as a benchmark and as a demonstration that the language is
+-- actually usable for something with a shape to it.
+--
+-- Positions are a list of column indices, one per row placed so far, held in
+-- reverse order. A queen at column `c` on the row we are about to place
+-- conflicts with an earlier queen `d` rows back at column `q` when `q == c`
+-- (same column) or `abs (q - c) == d` (same diagonal).
+
+import List
+import Int
+
+let safe candidate placed =
+  let rec check distance rest =
+    match rest {
+      [] -> True,
+      q :: tail ->
+        if q == candidate then
+          False
+        else if Int.abs (q - candidate) == distance then
+          False
+        else
+          check (distance + 1) tail,
+    }
+  in check 1 placed
+
+let rec solve n row placed =
+  if row == n then
+    1
+  else
+    List.range 0 n
+      |> List.filter (\c -> safe c placed)
+      |> List.map (\c -> solve n (row + 1) (c :: placed))
+      |> List.sum
+
+let count n = solve n 0 []
+
+let main () =
+  List.for_each
+    (\n -> print (int_to_string n ^ " queens: "
+                  ^ int_to_string (count n) ^ " solutions"))
+    (List.range 1 9)

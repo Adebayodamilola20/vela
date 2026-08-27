@@ -1,0 +1,80 @@
+-- The Prelude: names every module can see without importing anything.
+--
+-- Deliberately small. Anything that belongs to one data type lives in that
+-- type's module (List, String, Option, ...) so the ambient namespace stays
+-- something a reader can hold in their head.
+
+-- ==========================================================================
+-- Output
+-- ==========================================================================
+
+extern print : String -> Unit = "print"
+extern print_err : String -> Unit = "print_err"
+
+-- Render any value the way the compiler would. Strings come back quoted, so
+-- `print (show "hi")` writes `"hi"` while `print "hi"` writes `hi`.
+extern show : a -> String = "show"
+
+-- Stop the program with a message. Returns `b` so it can sit in any branch.
+extern panic : String -> b = "panic"
+
+-- ==========================================================================
+-- Comparison
+-- ==========================================================================
+
+-- -1, 0 or 1. Total across every comparable type, so it can drive a sort.
+extern compare : a -> a -> Int = "compare"
+
+let min a b = if a <= b then a else b
+let max a b = if a >= b then a else b
+
+-- ==========================================================================
+-- Conversions
+-- ==========================================================================
+
+extern int_to_string : Int -> String = "int_to_string"
+extern float_to_string : Float -> String = "float_to_string"
+extern int_to_float : Int -> Float = "int_to_float"
+
+-- Truncates toward zero. Panics on NaN and the infinities, which have no
+-- sensible Int to become.
+extern float_to_int : Float -> Int = "float_to_int"
+
+-- ==========================================================================
+-- Function plumbing
+-- ==========================================================================
+
+let identity x = x
+
+-- `const x` ignores its second argument — useful with `map` and friends.
+let const x _y = x
+
+let flip f a b = f b a
+
+-- Turn a two-argument function into one that takes a pair, and back.
+let curry f a b = f (a, b)
+let uncurry f pair = match pair { (a, b) -> f a b }
+
+-- Explicit application. `f <| x` is `f x`, but chains right, so it removes
+-- parentheses from the *end* of an expression the way `|>` does from the front.
+let apply f x = f x
+
+-- ==========================================================================
+-- Tuples
+-- ==========================================================================
+
+let fst pair = match pair { (a, _) -> a }
+let snd pair = match pair { (_, b) -> b }
+
+let swap pair = match pair { (a, b) -> (b, a) }
+
+-- ==========================================================================
+-- Bool
+-- ==========================================================================
+
+-- The operators `&&` and `||` short-circuit; these are ordinary functions and
+-- so evaluate both arguments. Reach for them only when passing them along.
+let and_also a b = if a then b else False
+let or_else a b = if a then True else b
+
+let xor a b = if a then not b else b

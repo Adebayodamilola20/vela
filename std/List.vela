@@ -1,0 +1,294 @@
+-- Singly linked lists.
+--
+-- `[a]` is built into the surface syntax but is an ordinary data type: `Nil`
+-- and `Cons` are its constructors and `::` is `Cons`.
+--
+-- Every function here is either tail recursive or bounded by the length of its
+-- result, so none of them can overflow the stack on a long list. Where that
+-- meant building the answer backwards, the reversal is spelled out rather than
+-- hidden, because it costs a second pass and the reader should see it.
+
+import Option
+
+-- ==========================================================================
+-- Basics
+-- ==========================================================================
+
+let is_empty xs = match xs { [] -> True, _ -> False }
+
+let rec length xs =
+  let rec go n rest =
+    match rest {
+      [] -> n,
+      _ :: tail -> go (n + 1) tail,
+    }
+  in go 0 xs
+
+let head xs =
+  match xs {
+    [] -> Option.None,
+    x :: _ -> Option.Some x,
+  }
+
+let tail xs =
+  match xs {
+    [] -> Option.None,
+    _ :: rest -> Option.Some rest,
+  }
+
+let rec last xs =
+  match xs {
+    [] -> Option.None,
+    [x] -> Option.Some x,
+    _ :: rest -> last rest,
+  }
+
+let cons x xs = x :: xs
+
+-- ==========================================================================
+-- Rearranging
+-- ==========================================================================
+
+let reverse xs =
+  let rec go acc rest =
+    match rest {
+      [] -> acc,
+      x :: tail -> go (x :: acc) tail,
+    }
+  in go [] xs
+
+let append xs ys = xs ++ ys
+
+let rec take n xs =
+  if n <= 0 then
+    []
+  else
+    match xs {
+      [] -> [],
+      x :: rest -> x :: take (n - 1) rest,
+    }
+
+let rec drop n xs =
+  if n <= 0 then
+    xs
+  else
+    match xs {
+      [] -> [],
+      _ :: rest -> drop (n - 1) rest,
+    }
+
+let rec get n xs =
+  match xs {
+    [] -> Option.None,
+    x :: rest -> if n <= 0 then Option.Some x else get (n - 1) rest,
+  }
+
+-- ==========================================================================
+-- Transforming
+-- ==========================================================================
+
+let map f xs =
+  let rec go acc rest =
+    match rest {
+      [] -> reverse acc,
+      x :: tail -> go (f x :: acc) tail,
+    }
+  in go [] xs
+
+-- `map` with the index alongside each element.
+let map_indexed f xs =
+  let rec go i acc rest =
+    match rest {
+      [] -> reverse acc,
+      x :: tail -> go (i + 1) (f i x :: acc) tail,
+    }
+  in go 0 [] xs
+
+let filter pred xs =
+  let rec go acc rest =
+    match rest {
+      [] -> reverse acc,
+      x :: tail -> go (if pred x then x :: acc else acc) tail,
+    }
+  in go [] xs
+
+-- Map and filter in one pass: keep the elements `f` answers `Some` for.
+let filter_map f xs =
+  let rec go acc rest =
+    match rest {
+      [] -> reverse acc,
+      x :: tail ->
+        match f x {
+          Option.Some y -> go (y :: acc) tail,
+          Option.None -> go acc tail,
+        },
+    }
+  in go [] xs
+
+let rec concat xss =
+  match xss {
+    [] -> [],
+    xs :: rest -> xs ++ concat rest,
+  }
+
+let concat_map f xs = concat (map f xs)
+
+-- Drop every `None`, unwrap every `Some`.
+let flatten_options xs = filter_map identity xs
+
+-- ==========================================================================
+-- Folding
+-- ==========================================================================
+
+-- Left fold: `fold_left f init [a, b]` is `f (f init a) b`. Tail recursive,
+-- so this is the one to reach for on a long list.
+let fold_left f init xs =
+  let rec go acc rest =
+    match rest {
+      [] -> acc,
+      x :: tail -> go (f acc x) tail,
+    }
+  in go init xs
+
+-- Right fold: `fold_right f init [a, b]` is `f a (f b init)`. Implemented by
+-- reversing first so that it, too, runs in constant stack.
+let fold_right f init xs = fold_left (flip f) init (reverse xs)
+
+let sum xs = fold_left (\acc x -> acc + x) 0 xs
+let product xs = fold_left (\acc x -> acc * x) 1 xs
+
+let sum_float xs = fold_left (\acc x -> acc +. x) 0.0 xs
+
+let maximum xs =
+  match xs {
+    [] -> Option.None,
+    x :: rest -> Option.Some (fold_left max x rest),
+  }
+
+let minimum xs =
+  match xs {
+    [] -> Option.None,
+    x :: rest -> Option.Some (fold_left min x rest),
+  }
+
+-- ==========================================================================
+-- Searching
+-- ==========================================================================
+
+let rec find pred xs =
+  match xs {
+    [] -> Option.None,
+    x :: rest -> if pred x then Option.Some x else find pred rest,
+  }
+
+let rec find_index pred xs =
+  let rec go i rest =
+    match rest {
+      [] -> Option.None,
+      x :: tail -> if pred x then Option.Some i else go (i + 1) tail,
+    }
+  in go 0 xs
+
+let rec any pred xs =
+  match xs {
+    [] -> False,
+    x :: rest -> if pred x then True else any pred rest,
+  }
+
+let rec all pred xs =
+  match xs {
+    [] -> True,
+    x :: rest -> if pred x then all pred rest else False,
+  }
+
+let member x xs = any (\y -> y == x) xs
+
+let count pred xs = fold_left (\n x -> if pred x then n + 1 else n) 0 xs
+
+-- ==========================================================================
+-- Combining
+-- ==========================================================================
+
+-- Stops at the shorter of the two, rather than failing.
+let rec zip xs ys =
+  match (xs, ys) {
+    (x :: xr, y :: yr) -> (x, y) :: zip xr yr,
+    _ -> [],
+  }
+
+let rec zip_with f xs ys =
+  match (xs, ys) {
+    (x :: xr, y :: yr) -> f x y :: zip_with f xr yr,
+    _ -> [],
+  }
+
+let unzip pairs =
+  let rec go left right rest =
+    match rest {
+      [] -> (reverse left, reverse right),
+      (a, b) :: tail -> go (a :: left) (b :: right) tail,
+    }
+  in go [] [] pairs
+
+-- ==========================================================================
+-- Building
+-- ==========================================================================
+
+-- `range 0 5` is `[0, 1, 2, 3, 4]` — the end is excluded.
+let range start stop =
+  let rec go i acc =
+    if i < start then acc else go (i - 1) (i :: acc)
+  in go (stop - 1) []
+
+let repeat n x =
+  let rec go i acc = if i <= 0 then acc else go (i - 1) (x :: acc)
+  in go n []
+
+-- ==========================================================================
+-- Sorting
+-- ==========================================================================
+
+-- Merge sort: O(n log n), and stable, so equal elements keep their order.
+let rec _merge cmp xs ys =
+  match (xs, ys) {
+    ([], _) -> ys,
+    (_, []) -> xs,
+    (x :: xr, y :: yr) ->
+      if cmp x y <= 0 then
+        x :: _merge cmp xr ys
+      else
+        y :: _merge cmp xs yr,
+  }
+
+let _split xs =
+  let rec go left right rest =
+    match rest {
+      [] -> (left, right),
+      a :: [] -> (a :: left, right),
+      a :: b :: tail -> go (a :: left) (b :: right) tail,
+    }
+  in go [] [] xs
+
+let rec sort_by cmp xs =
+  match xs {
+    [] -> [],
+    [_] -> xs,
+    _ ->
+      match _split xs {
+        (left, right) -> _merge cmp (sort_by cmp left) (sort_by cmp right),
+      },
+  }
+
+let sort xs = sort_by compare xs
+
+-- ==========================================================================
+-- Misc
+-- ==========================================================================
+
+let intersperse sep xs =
+  match xs {
+    [] -> [],
+    x :: rest -> x :: concat_map (\y -> [sep, y]) rest,
+  }
+
+let for_each f xs = fold_left (\_acc x -> f x) () xs

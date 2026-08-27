@@ -1,0 +1,4 @@
+-- The smallest complete Vela program.
+
+let main () =
+  print "Hello from Vela."
