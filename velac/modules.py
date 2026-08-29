@@ -82,12 +82,53 @@ class ModuleGraph:
 
     def load_root(self, path: str, name: str | None = None) -> LoadedModule:
         """Parse `path` and everything it transitively imports."""
+        self._check_root_path(path)
         path = os.path.abspath(path)
         if name is None:
             name = os.path.splitext(os.path.basename(path))[0]
         root = self._load_file(path, name, span=None)
         self._visit(root)
         return root
+
+    @staticmethod
+    def _check_root_path(path: str) -> None:
+        """Reject an obviously wrong argument with advice rather than errno.
+
+        The common cases are a directory (often because a shell expanded
+        something — zsh turns `...` into `../..`) and a file that exists but
+        is not Vela source. Both used to surface as a bare OSError message.
+        """
+        if os.path.isdir(path):
+            entries = []
+            try:
+                entries = sorted(
+                    e for e in os.listdir(path) if e.endswith(SOURCE_SUFFIX)
+                )[:4]
+            except OSError:
+                pass
+
+            notes = [f"`{path}` is a directory, not a file."]
+            if entries:
+                notes.append("did you mean one of these?")
+                notes.extend(f"  {os.path.join(path, e)}" for e in entries)
+            else:
+                notes.append(f"pass the path to a {SOURCE_SUFFIX} file.")
+            # Worth calling out: it is rarely what the user typed.
+            notes.append("note that zsh expands `...` to `../..`.")
+            raise Diagnostic(f"expected a {SOURCE_SUFFIX} file", [],
+                             notes=notes, code="E0001")
+
+        if not os.path.exists(path):
+            raise Diagnostic(
+                f"no such file: {path}", [],
+                notes=[f"pass the path to a {SOURCE_SUFFIX} file."],
+                code="E0001")
+
+        if not path.endswith(SOURCE_SUFFIX):
+            raise Diagnostic(
+                f"`{path}` is not a {SOURCE_SUFFIX} file", [],
+                notes=["Vela source files end in .vela."],
+                code="E0001")
 
     def _read(self, path: str, span: Span | None) -> str:
         try:
