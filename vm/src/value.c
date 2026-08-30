@@ -236,63 +236,82 @@ int64_t wrap_mul(int64_t a, int64_t b)
 /* Equality and ordering                                              */
 /* ------------------------------------------------------------------ */
 
+/* Both of these walk into the *last* field by looping rather than recursing.
+ * A list is a Cons whose second field is the rest of the list, so recursing
+ * there would put one C frame on the stack per element and blow it on a list
+ * of any real size. Everything before the last field still recurses, which is
+ * bounded by how deeply the value nests rather than by how long it is. */
+
 bool values_equal(Value a, Value b)
 {
-    if (a.type != b.type) return false;
+    for (;;) {
+        if (a.type != b.type) return false;
 
-    switch (a.type) {
-    case VAL_INT:   return AS_INT(a) == AS_INT(b);
-    case VAL_FLOAT: return AS_FLOAT(a) == AS_FLOAT(b);
-    case VAL_BOOL:  return AS_BOOL(a) == AS_BOOL(b);
-    case VAL_UNIT:  return true;
-    case VAL_OBJ:   break;
-    }
-
-    Obj *ao = AS_OBJ(a);
-    Obj *bo = AS_OBJ(b);
-    if (ao->type != bo->type) return false;
-
-    switch (ao->type) {
-    case OBJ_STRING: {
-        ObjString *x = (ObjString *)ao;
-        ObjString *y = (ObjString *)bo;
-        return x->length == y->length &&
-               memcmp(x->chars, y->chars, (size_t)x->length) == 0;
-    }
-    case OBJ_CON: {
-        ObjCon *x = (ObjCon *)ao;
-        ObjCon *y = (ObjCon *)bo;
-        if (x->tag != y->tag || x->count != y->count) return false;
-        for (int i = 0; i < x->count; i++) {
-            if (!values_equal(x->fields[i], y->fields[i])) return false;
+        switch (a.type) {
+        case VAL_INT:   return AS_INT(a) == AS_INT(b);
+        case VAL_FLOAT: return AS_FLOAT(a) == AS_FLOAT(b);
+        case VAL_BOOL:  return AS_BOOL(a) == AS_BOOL(b);
+        case VAL_UNIT:  return true;
+        case VAL_OBJ:   break;
         }
-        return true;
-    }
-    case OBJ_TUPLE: {
-        ObjTuple *x = (ObjTuple *)ao;
-        ObjTuple *y = (ObjTuple *)bo;
-        if (x->count != y->count) return false;
-        for (int i = 0; i < x->count; i++) {
-            if (!values_equal(x->items[i], y->items[i])) return false;
+
+        Obj *ao = AS_OBJ(a);
+        Obj *bo = AS_OBJ(b);
+        if (ao->type != bo->type) return false;
+
+        switch (ao->type) {
+        case OBJ_STRING: {
+            ObjString *x = (ObjString *)ao;
+            ObjString *y = (ObjString *)bo;
+            return x->length == y->length &&
+                   memcmp(x->chars, y->chars, (size_t)x->length) == 0;
         }
-        return true;
-    }
-    case OBJ_RECORD: {
-        ObjRecord *x = (ObjRecord *)ao;
-        ObjRecord *y = (ObjRecord *)bo;
-        if (x->count != y->count) return false;
-        for (int i = 0; i < x->count; i++) {
-            if (x->labels[i]->length != y->labels[i]->length ||
-                memcmp(x->labels[i]->chars, y->labels[i]->chars,
-                       (size_t)x->labels[i]->length) != 0) {
-                return false;
+        case OBJ_CON: {
+            ObjCon *x = (ObjCon *)ao;
+            ObjCon *y = (ObjCon *)bo;
+            if (x->tag != y->tag || x->count != y->count) return false;
+            if (x->count == 0) return true;
+            for (int i = 0; i < x->count - 1; i++) {
+                if (!values_equal(x->fields[i], y->fields[i])) return false;
             }
-            if (!values_equal(x->values[i], y->values[i])) return false;
+            a = x->fields[x->count - 1];
+            b = y->fields[y->count - 1];
+            continue;
         }
-        return true;
-    }
-    default:
-        return ao == bo;
+        case OBJ_TUPLE: {
+            ObjTuple *x = (ObjTuple *)ao;
+            ObjTuple *y = (ObjTuple *)bo;
+            if (x->count != y->count) return false;
+            if (x->count == 0) return true;
+            for (int i = 0; i < x->count - 1; i++) {
+                if (!values_equal(x->items[i], y->items[i])) return false;
+            }
+            a = x->items[x->count - 1];
+            b = y->items[y->count - 1];
+            continue;
+        }
+        case OBJ_RECORD: {
+            ObjRecord *x = (ObjRecord *)ao;
+            ObjRecord *y = (ObjRecord *)bo;
+            if (x->count != y->count) return false;
+            for (int i = 0; i < x->count; i++) {
+                if (x->labels[i]->length != y->labels[i]->length ||
+                    memcmp(x->labels[i]->chars, y->labels[i]->chars,
+                           (size_t)x->labels[i]->length) != 0) {
+                    return false;
+                }
+            }
+            if (x->count == 0) return true;
+            for (int i = 0; i < x->count - 1; i++) {
+                if (!values_equal(x->values[i], y->values[i])) return false;
+            }
+            a = x->values[x->count - 1];
+            b = y->values[y->count - 1];
+            continue;
+        }
+        default:
+            return ao == bo;
+        }
     }
 }
 
@@ -303,73 +322,96 @@ int values_compare(Value a, Value b, bool *ok)
 {
     *ok = true;
 
-    if (a.type == VAL_INT && b.type == VAL_INT)
-        return cmp_i64(AS_INT(a), AS_INT(b));
-    if (a.type == VAL_FLOAT && b.type == VAL_FLOAT)
-        return cmp_dbl(AS_FLOAT(a), AS_FLOAT(b));
-    if (a.type == VAL_BOOL && b.type == VAL_BOOL)
-        return cmp_i64(AS_BOOL(a) ? 1 : 0, AS_BOOL(b) ? 1 : 0);
-    if (a.type == VAL_UNIT && b.type == VAL_UNIT)
-        return 0;
+    for (;;) {
+        if (a.type == VAL_INT && b.type == VAL_INT)
+            return cmp_i64(AS_INT(a), AS_INT(b));
+        if (a.type == VAL_FLOAT && b.type == VAL_FLOAT)
+            return cmp_dbl(AS_FLOAT(a), AS_FLOAT(b));
+        if (a.type == VAL_BOOL && b.type == VAL_BOOL)
+            return cmp_i64(AS_BOOL(a) ? 1 : 0, AS_BOOL(b) ? 1 : 0);
+        if (a.type == VAL_UNIT && b.type == VAL_UNIT)
+            return 0;
 
-    if (a.type != VAL_OBJ || b.type != VAL_OBJ) { *ok = false; return 0; }
+        if (a.type != VAL_OBJ || b.type != VAL_OBJ) { *ok = false; return 0; }
 
-    Obj *ao = AS_OBJ(a);
-    Obj *bo = AS_OBJ(b);
-    if (ao->type != bo->type) { *ok = false; return 0; }
+        Obj *ao = AS_OBJ(a);
+        Obj *bo = AS_OBJ(b);
+        if (ao->type != bo->type) { *ok = false; return 0; }
 
-    switch (ao->type) {
-    case OBJ_STRING: {
-        ObjString *x = (ObjString *)ao;
-        ObjString *y = (ObjString *)bo;
-        int shorter = x->length < y->length ? x->length : y->length;
-        int order = memcmp(x->chars, y->chars, (size_t)shorter);
-        if (order != 0) return order < 0 ? -1 : 1;
-        return cmp_i64(x->length, y->length);
-    }
-    case OBJ_CON: {
-        ObjCon *x = (ObjCon *)ao;
-        ObjCon *y = (ObjCon *)bo;
-        if (x->tag != y->tag) return cmp_i64(x->tag, y->tag);
-        int shorter = x->count < y->count ? x->count : y->count;
-        for (int i = 0; i < shorter; i++) {
-            int order = values_compare(x->fields[i], y->fields[i], ok);
-            if (!*ok || order != 0) return order;
-        }
-        return cmp_i64(x->count, y->count);
-    }
-    case OBJ_TUPLE: {
-        ObjTuple *x = (ObjTuple *)ao;
-        ObjTuple *y = (ObjTuple *)bo;
-        int shorter = x->count < y->count ? x->count : y->count;
-        for (int i = 0; i < shorter; i++) {
-            int order = values_compare(x->items[i], y->items[i], ok);
-            if (!*ok || order != 0) return order;
-        }
-        return cmp_i64(x->count, y->count);
-    }
-    case OBJ_RECORD: {
-        /* Labels are stored sorted, so a positional walk is the same as the
-         * sorted-key walk the reference interpreter does. */
-        ObjRecord *x = (ObjRecord *)ao;
-        ObjRecord *y = (ObjRecord *)bo;
-        int shorter = x->count < y->count ? x->count : y->count;
-        for (int i = 0; i < shorter; i++) {
-            ObjString *lx = x->labels[i];
-            ObjString *ly = y->labels[i];
-            int shorter_label = lx->length < ly->length ? lx->length : ly->length;
-            int order = memcmp(lx->chars, ly->chars, (size_t)shorter_label);
+        /* How many leading fields to recurse into. When the two values have
+         * the same width the final pair decides the answer on its own, so it
+         * becomes the next round of this loop instead of a recursive call. */
+        int shorter, recursed;
+
+        switch (ao->type) {
+        case OBJ_STRING: {
+            ObjString *x = (ObjString *)ao;
+            ObjString *y = (ObjString *)bo;
+            int common = x->length < y->length ? x->length : y->length;
+            int order = memcmp(x->chars, y->chars, (size_t)common);
             if (order != 0) return order < 0 ? -1 : 1;
-            if (lx->length != ly->length)
-                return lx->length < ly->length ? -1 : 1;
-            order = values_compare(x->values[i], y->values[i], ok);
-            if (!*ok || order != 0) return order;
+            return cmp_i64(x->length, y->length);
         }
-        return cmp_i64(x->count, y->count);
-    }
-    default:
-        *ok = false;
-        return 0;
+        case OBJ_CON: {
+            ObjCon *x = (ObjCon *)ao;
+            ObjCon *y = (ObjCon *)bo;
+            if (x->tag != y->tag) return cmp_i64(x->tag, y->tag);
+            shorter = x->count < y->count ? x->count : y->count;
+            recursed = x->count == y->count ? shorter - 1 : shorter;
+            for (int i = 0; i < recursed; i++) {
+                int order = values_compare(x->fields[i], y->fields[i], ok);
+                if (!*ok || order != 0) return order;
+            }
+            if (x->count != y->count) return cmp_i64(x->count, y->count);
+            if (shorter == 0) return 0;
+            a = x->fields[shorter - 1];
+            b = y->fields[shorter - 1];
+            continue;
+        }
+        case OBJ_TUPLE: {
+            ObjTuple *x = (ObjTuple *)ao;
+            ObjTuple *y = (ObjTuple *)bo;
+            shorter = x->count < y->count ? x->count : y->count;
+            recursed = x->count == y->count ? shorter - 1 : shorter;
+            for (int i = 0; i < recursed; i++) {
+                int order = values_compare(x->items[i], y->items[i], ok);
+                if (!*ok || order != 0) return order;
+            }
+            if (x->count != y->count) return cmp_i64(x->count, y->count);
+            if (shorter == 0) return 0;
+            a = x->items[shorter - 1];
+            b = y->items[shorter - 1];
+            continue;
+        }
+        case OBJ_RECORD: {
+            /* Labels are stored sorted, so a positional walk is the same as
+             * the sorted-key walk the reference interpreter does. */
+            ObjRecord *x = (ObjRecord *)ao;
+            ObjRecord *y = (ObjRecord *)bo;
+            shorter = x->count < y->count ? x->count : y->count;
+            recursed = x->count == y->count ? shorter - 1 : shorter;
+            for (int i = 0; i < shorter; i++) {
+                ObjString *lx = x->labels[i];
+                ObjString *ly = y->labels[i];
+                int common = lx->length < ly->length ? lx->length : ly->length;
+                int order = memcmp(lx->chars, ly->chars, (size_t)common);
+                if (order != 0) return order < 0 ? -1 : 1;
+                if (lx->length != ly->length)
+                    return lx->length < ly->length ? -1 : 1;
+                if (i >= recursed) break;   /* the last pair loops instead */
+                order = values_compare(x->values[i], y->values[i], ok);
+                if (!*ok || order != 0) return order;
+            }
+            if (x->count != y->count) return cmp_i64(x->count, y->count);
+            if (shorter == 0) return 0;
+            a = x->values[shorter - 1];
+            b = y->values[shorter - 1];
+            continue;
+        }
+        default:
+            *ok = false;
+            return 0;
+        }
     }
 }
 

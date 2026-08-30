@@ -151,10 +151,23 @@ Image *image_load(const char *path, char **error)
         return NULL;
     }
 
+    /* Make the image a collector root before allocating anything into it.
+     * Loading builds ObjStrings, and any of those allocations can trigger a
+     * collection; until the image is reachable from `mark_roots` the strings
+     * already read are reachable from nothing at all and get swept, leaving
+     * the constant table pointing at freed memory.
+     *
+     * Every count is zero here, so marking walks nothing, and each array is
+     * allocated before its count is published — the same discipline the
+     * object constructors in `value.c` follow, for the same reason. */
+    vm.image = image;
+
     /* -- constants -------------------------------------------------- */
-    image->constant_count = (int)read_u32(&r);
-    image->constants = (Value *)calloc((size_t)image->constant_count + 1,
+    int constant_count = (int)read_u32(&r);
+    image->constants = (Value *)calloc((size_t)constant_count + 1,
                                        sizeof(Value));
+    if (image->constants == NULL) goto out_of_memory;
+    image->constant_count = constant_count;
     for (int i = 0; i < image->constant_count && !r.failed; i++) {
         uint8_t tag = read_u8(&r);
         switch (tag) {
@@ -176,14 +189,17 @@ Image *image_load(const char *path, char **error)
     }
 
     /* -- record label sets ------------------------------------------ */
-    image->label_set_count = (int)read_u32(&r);
-    image->label_sets = (LabelSet *)calloc((size_t)image->label_set_count + 1,
+    int label_set_count = (int)read_u32(&r);
+    image->label_sets = (LabelSet *)calloc((size_t)label_set_count + 1,
                                            sizeof(LabelSet));
+    if (image->label_sets == NULL) goto out_of_memory;
+    image->label_set_count = label_set_count;
     for (int i = 0; i < image->label_set_count && !r.failed; i++) {
         int count = (int)read_u16(&r);
-        image->label_sets[i].count = count;
         image->label_sets[i].labels =
             (ObjString **)calloc((size_t)count + 1, sizeof(ObjString *));
+        if (image->label_sets[i].labels == NULL) goto out_of_memory;
+        image->label_sets[i].count = count;
         for (int j = 0; j < count && !r.failed; j++) {
             int length = 0;
             char *text = read_string(&r, &length);
@@ -193,9 +209,11 @@ Image *image_load(const char *path, char **error)
     }
 
     /* -- constructors ------------------------------------------------ */
-    image->constructor_count = (int)read_u32(&r);
+    int constructor_count = (int)read_u32(&r);
     image->constructors = (ConstructorInfo *)calloc(
-        (size_t)image->constructor_count + 1, sizeof(ConstructorInfo));
+        (size_t)constructor_count + 1, sizeof(ConstructorInfo));
+    if (image->constructors == NULL) goto out_of_memory;
+    image->constructor_count = constructor_count;
     for (int i = 0; i < image->constructor_count && !r.failed; i++) {
         image->constructors[i].arity = (int)read_u16(&r);
         image->constructors[i].name = read_string(&r, NULL);
@@ -204,18 +222,22 @@ Image *image_load(const char *path, char **error)
     }
 
     /* -- globals ----------------------------------------------------- */
-    image->global_count = (int)read_u32(&r);
-    image->global_names = (char **)calloc((size_t)image->global_count + 1,
+    int global_count = (int)read_u32(&r);
+    image->global_names = (char **)calloc((size_t)global_count + 1,
                                           sizeof(char *));
+    if (image->global_names == NULL) goto out_of_memory;
+    image->global_count = global_count;
     for (int i = 0; i < image->global_count && !r.failed; i++) {
         image->global_names[i] = read_string(&r, NULL);
         if (image->global_names[i] == NULL) r.failed = true;
     }
 
     /* -- functions --------------------------------------------------- */
-    image->function_count = (int)read_u32(&r);
-    image->functions = (Function *)calloc((size_t)image->function_count + 1,
+    int function_count = (int)read_u32(&r);
+    image->functions = (Function *)calloc((size_t)function_count + 1,
                                           sizeof(Function));
+    if (image->functions == NULL) goto out_of_memory;
+    image->function_count = function_count;
     for (int i = 0; i < image->function_count && !r.failed; i++) {
         Function *fn = &image->functions[i];
         fn->name = read_string(&r, NULL);
@@ -248,17 +270,26 @@ Image *image_load(const char *path, char **error)
     free(buffer);
 
     if (r.failed) {
+        vm.image = NULL;
         image_free(image);
         *error = strdup("image is truncated or malformed");
         return NULL;
     }
     if (image->entry < 0 || image->entry >= image->function_count) {
+        vm.image = NULL;
         image_free(image);
         *error = strdup("image entry point is out of range");
         return NULL;
     }
 
     return image;
+
+out_of_memory:
+    free(buffer);
+    vm.image = NULL;
+    image_free(image);
+    *error = strdup("out of memory reading image");
+    return NULL;
 }
 
 void image_free(Image *image)

@@ -144,6 +144,17 @@ static void close_upvalues(Value *last)
 /* Calling                                                            */
 /* ------------------------------------------------------------------ */
 
+static bool call_value(Value callee, int arg_count);
+
+static void reverse_values(Value *values, int count)
+{
+    for (int i = 0, j = count - 1; i < j; i++, j--) {
+        Value swap = values[i];
+        values[i] = values[j];
+        values[j] = swap;
+    }
+}
+
 /* Push a frame for `closure`, whose arguments are already on the stack.
  * `already` counts arguments carried over from a partial application, which
  * live in `closure->applied` and are copied down first. */
@@ -188,6 +199,15 @@ static bool push_frame(ObjClosure *closure, int arg_count)
         return false;
     }
 
+    /* Check for room before disturbing the stack. `push` refuses to write past
+     * the end, so a frame that only half fits would be installed anyway and
+     * then addressed through `slots` as if it were whole. */
+    if ((size_t)(vm.stack_top - vm.stack) + (size_t)closure->applied_count
+            + (size_t)fn->max_slots > vm.stack_capacity) {
+        runtime_error("stack overflow");
+        return false;
+    }
+
     /* Lay the frame out as [callee][applied...][args...]. The callee slot is
      * overwritten by the first parameter, so slot 0 is parameter 0. */
     Value *base = vm.stack_top - arg_count - 1;
@@ -205,8 +225,21 @@ static bool push_frame(ObjClosure *closure, int arg_count)
     memmove(base, base + 1, sizeof(Value) * (size_t)supplied);
     vm.stack_top = base + supplied;
 
+    /* Over-applied: the function takes `arity` of these and is expected to
+     * return another function that the rest are applied to — what
+     * `Interpreter.apply` does by looping. The extras cannot simply stay on
+     * top, because that is where the frame's own slots go, so rotate them
+     * *below* the frame and let `OP_RETURN` pick them up. */
+    int extra = supplied - fn->arity;
+    if (extra > 0) {
+        reverse_values(base, fn->arity);
+        reverse_values(base + fn->arity, extra);
+        reverse_values(base, supplied);
+        base += extra;
+    }
+
     /* Reserve the locals the function may declare beyond its parameters. */
-    for (int i = supplied; i < fn->max_slots; i++) {
+    for (int i = fn->arity; i < fn->max_slots; i++) {
         push(UNIT_VAL);
     }
 
@@ -214,6 +247,7 @@ static bool push_frame(ObjClosure *closure, int arg_count)
     frame->closure = closure;
     frame->ip = fn->code;
     frame->slots = base;
+    frame->extra_count = extra;
     return true;
 }
 
@@ -246,22 +280,30 @@ static bool call_native_value(ObjNative *native, int arg_count)
         return true;
     }
 
-    if (supplied > arity) {
-        runtime_error("native %s applied to too many arguments",
-                      VELA_NATIVE_NAMES[id]);
-        return false;
-    }
-
+    /* The native takes the first `arity` arguments; anything beyond that is
+     * applied to whatever it returns. */
     Value args[8];
     for (int i = 0; i < native->applied_count; i++) args[i] = native->applied[i];
-    for (int i = 0; i < arg_count; i++) {
-        args[native->applied_count + i] = vm.stack_top[-arg_count + i];
+    for (int i = native->applied_count; i < arity; i++) {
+        args[i] = vm.stack_top[-arg_count + (i - native->applied_count)];
     }
 
     Value result;
     if (!native_call(id, arity, args, &result)) return false;
 
-    vm.stack_top -= arg_count + 1;
+    Value *base = vm.stack_top - arg_count - 1;
+
+    int extra = supplied - arity;
+    if (extra > 0) {
+        /* The unconsumed arguments are the topmost `extra` on the stack.
+         * Restack them as `[result][extras...]` and go round again. */
+        memmove(base + 1, vm.stack_top - extra, sizeof(Value) * (size_t)extra);
+        base[0] = result;
+        vm.stack_top = base + 1 + extra;
+        return call_value(result, extra);
+    }
+
+    vm.stack_top = base;
     push(result);
     return true;
 }
@@ -322,6 +364,13 @@ static RunResult run(void)
     CallFrame *frame = &vm.frames[vm.frame_count - 1];
 
     for (;;) {
+        /* `push` reports an overflow and declines to write rather than
+         * returning a failure its many callers would have to thread through.
+         * Stopping here is what makes that safe: the machine never runs on
+         * past the first error with a stack that no longer says what it
+         * means. */
+        if (vm.had_error) return RUN_RUNTIME_ERROR;
+
         uint8_t instruction = READ_BYTE();
 
         switch (instruction) {
@@ -435,6 +484,14 @@ static RunResult run(void)
             ObjClosure *closure = AS_CLOSURE(callee);
             Value *args = vm.stack_top - arg_count;
 
+            /* The reused frame still has to fit; the callee may declare more
+             * slots than the function being replaced. */
+            if ((size_t)(frame->slots - vm.stack)
+                    + (size_t)closure->fn->max_slots > vm.stack_capacity) {
+                runtime_error("stack overflow");
+                return RUN_RUNTIME_ERROR;
+            }
+
             /* Anything captured from this frame must be closed before the
              * slots are overwritten. */
             close_upvalues(frame->slots);
@@ -453,14 +510,32 @@ static RunResult run(void)
         case OP_RETURN: {
             Value result = pop();
             close_upvalues(frame->slots);
+
+            /* Where the caller expects the result: the slot the callee
+             * occupied, which is below any over-applied arguments. */
+            int extra = frame->extra_count;
+            Value *base = frame->slots - extra;
             vm.frame_count--;
+
+            if (extra > 0) {
+                /* This call was over-applied and has now produced the function
+                 * the remaining arguments belong to. Only the entry frame can
+                 * be the outermost one, and it never carries extras, so there
+                 * is always a caller to return into below. */
+                memmove(base + 1, base, sizeof(Value) * (size_t)extra);
+                base[0] = result;
+                vm.stack_top = base + 1 + extra;
+                if (!call_value(result, extra)) return RUN_RUNTIME_ERROR;
+                frame = &vm.frames[vm.frame_count - 1];
+                break;
+            }
 
             if (vm.frame_count == 0) {
                 push(result);
                 return RUN_OK;
             }
 
-            vm.stack_top = frame->slots;
+            vm.stack_top = base;
             push(result);
             frame = &vm.frames[vm.frame_count - 1];
             break;
@@ -739,17 +814,34 @@ static RunResult run(void)
                 count++;
             }
 
+            /* Collect the left spine's heads in one pass. Re-walking the spine
+             * to find each head would make `++` quadratic. Plain malloc,
+             * because this scratch array is not GC-managed; the heads it holds
+             * stay reachable through `left`, which is still on the stack. */
+            Value *heads = NULL;
+            if (count > 0) {
+                heads = (Value *)malloc(sizeof(Value) * (size_t)count);
+                if (heads == NULL) {
+                    fprintf(stderr, "vela: out of memory\n");
+                    exit(70);
+                }
+                Value cursor = left;
+                for (int i = 0; i < count; i++) {
+                    heads[i] = AS_CON(cursor)->fields[0];
+                    cursor = AS_CON(cursor)->fields[1];
+                }
+            }
+
             Value result = right;
             for (int i = count - 1; i >= 0; i--) {
-                Value cursor = left;
-                for (int j = 0; j < i; j++) cursor = AS_CON(cursor)->fields[1];
                 push(result);                    /* keep the tail reachable */
                 ObjCon *cell = con_new(1, 2);    /* Cons */
                 pop();
-                cell->fields[0] = AS_CON(cursor)->fields[0];
+                cell->fields[0] = heads[i];
                 cell->fields[1] = result;
                 result = OBJ_VAL(cell);
             }
+            free(heads);
 
             pop(); pop();
             push(result);
@@ -791,6 +883,7 @@ RunResult vm_run(Image *image, int argc, char **argv)
     frame->closure = closure;
     frame->ip = entry->code;
     frame->slots = vm.stack_top - 1;
+    frame->extra_count = 0;
 
     for (int i = 0; i < entry->max_slots; i++) push(UNIT_VAL);
 
