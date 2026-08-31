@@ -1,0 +1,53 @@
+-- Over-application: handing a function more arguments than it takes.
+--
+-- The extras belong to whatever it returns, so `pick True 5` has to mean
+-- `(pick True) 5`. Getting this wrong is quiet rather than loud — the call
+-- yields the intermediate function and the surplus arguments vanish — so
+-- every shape of it is pinned here, for both backends.
+
+import List
+import String
+
+-- Arity 1, called with two arguments.
+let pick b = if b then (\x -> x + 1) else (\x -> x * 2)
+
+-- Arity 1, called with four: the surplus is consumed one layer at a time.
+let chain u = \a -> \b -> \c -> a + b + c
+
+-- Over-application on top of partial application.
+let add3 a b c = a + b + c
+
+-- The function underneath is an extern, not a Vela closure.
+let trimmer b = if b then String.to_upper else String.trim
+
+-- Over-application in tail position, where the frame is reused.
+let rec spin n f = if n == 0 then f 1 else spin (n - 1) f
+
+-- The returned closure captures a variable from the frame that is returning.
+let capture k =
+  match k {
+    0 -> (\y -> y * 100),
+    _ -> (\y -> y + k),
+  }
+
+let main () =
+  print (int_to_string (pick True 5));
+  print (int_to_string (pick False 5));
+  print (int_to_string (chain () 1 2 3));
+
+  -- The same three arguments split every way across the two calls.
+  print (int_to_string (add3 1 2 3));
+  print (int_to_string ((add3 1) 2 3));
+  print (int_to_string ((add3 1 2) 3));
+
+  print (trimmer True "  hi  ");
+  print (trimmer False "  hi  ");
+
+  print (int_to_string (spin 3 (\x -> x + 41)));
+  print (int_to_string (capture 0 7));
+  print (int_to_string (capture 5 7));
+
+  -- Under-application still has to keep working: these are values.
+  print (show (List.map (\f -> f 10) [pick True, pick False]));
+  print (int_to_string (List.fold_left (\acc f -> f acc) 1
+                          [pick True, pick True, pick False]))

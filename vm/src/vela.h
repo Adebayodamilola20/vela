@@ -203,6 +203,9 @@ typedef struct {
     ObjClosure *closure;
     uint8_t    *ip;
     Value      *slots;
+    /* Arguments this call was over-applied with. They sit on the stack just
+     * below `slots`, and the return path applies them to the result. */
+    int         extra_count;
 } CallFrame;
 
 typedef struct {

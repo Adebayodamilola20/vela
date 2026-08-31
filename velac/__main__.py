@@ -16,10 +16,19 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import threading
 
 from .driver import compile_program, report
 from .errors import Diagnostic
 from .values import VelaPanic
+
+# Every stage — parsing, inference, lowering, the interpreter — walks the tree
+# recursively, so a deeply nested expression costs Python stack in proportion
+# to its depth. CPython's default ceiling is around a thousand frames, which a
+# few hundred levels of nesting is enough to reach, so the work runs on a
+# thread with a stack sized to match a raised limit.
+_STACK_BYTES = 64 * 1024 * 1024
+_RECURSION_LIMIT = 30000
 
 
 def _use_color(stream) -> bool:
@@ -158,15 +167,60 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+def _dispatch(args) -> int:
     try:
         return args.func(args)
     except Diagnostic as d:
         sys.stderr.write(f"error: {d.message}\n")
         return 1
+    except RecursionError:
+        # Past the raised limit. Report it the way any other input problem is
+        # reported, rather than letting a traceback out.
+        sys.stderr.write(
+            f"error: {args.file}: nested too deeply for the compiler\n")
+        return 1
     except BrokenPipeError:
         return 0
+
+
+def _run_deep(work) -> int:
+    """Run `work` on a thread with room to recurse, and return its status."""
+    outcome: list[object] = []
+
+    def entry() -> None:
+        sys.setrecursionlimit(_RECURSION_LIMIT)
+        try:
+            outcome.append(work())
+        except BaseException as exc:   # re-raised on the calling thread
+            outcome.append(exc)
+
+    try:
+        threading.stack_size(_STACK_BYTES)
+    except (ValueError, RuntimeError):
+        pass   # the platform will not take the hint; the default has to do
+
+    # A daemon, so an interrupt during a long compile can still end the process.
+    thread = threading.Thread(target=entry, daemon=True)
+    thread.start()
+    try:
+        thread.join()
+    except KeyboardInterrupt:
+        sys.stderr.write("\ninterrupted\n")
+        return 130
+
+    if not outcome:
+        return 1
+    result = outcome[0]
+    if isinstance(result, BaseException):
+        raise result
+    assert isinstance(result, int)
+    return result
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        return _run_deep(lambda: _dispatch(args))
     except KeyboardInterrupt:
         sys.stderr.write("\ninterrupted\n")
         return 130

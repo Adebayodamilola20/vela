@@ -322,7 +322,10 @@ bool native_call(int id, int arg_count, Value *args, Value *result)
         }
         if (count > 1) total += sep->length * (count - 1);
 
-        char *chars = (char *)malloc((size_t)total + 1);
+        /* `reallocate`, not `malloc`: this buffer becomes an ObjString's, and
+         * the collector charges it back on free. Allocating it off the books
+         * would drift `bytes_allocated` down on every collection. */
+        char *chars = (char *)reallocate(NULL, 0, (size_t)total + 1);
         int offset = 0;
         cursor = args[0];
         for (int i = 0; i < count; i++) {
@@ -373,7 +376,7 @@ bool native_call(int id, int arg_count, Value *args, Value *result)
         /* ASCII only, which is what Python's str.upper does for ASCII input;
          * non-ASCII passes through unchanged rather than being mangled. */
         ObjString *s = AS_STRING(args[0]);
-        char *chars = (char *)malloc((size_t)s->length + 1);
+        char *chars = (char *)reallocate(NULL, 0, (size_t)s->length + 1);
         for (int i = 0; i < s->length; i++) {
             unsigned char c = (unsigned char)s->chars[i];
             if (id == 18 && c >= 'a' && c <= 'z') c = (unsigned char)(c - 32);
@@ -457,7 +460,10 @@ bool native_call(int id, int arg_count, Value *args, Value *result)
     /* -- arrays ------------------------------------------------------ */
     case 40: {  /* array_new */
         int64_t n = AS_INT(args[0]);
-        if (n < 0) {
+        /* Bounded above as well as below: an array's length is an `int`, and
+         * silently truncating to it would hand back an array of the wrong
+         * size rather than reporting that the request cannot be met. */
+        if (n < 0 || n > INT32_MAX) {
             runtime_error("cannot create an array of length %lld", (long long)n);
             return false;
         }

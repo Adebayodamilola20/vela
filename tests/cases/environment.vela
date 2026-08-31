@@ -1,0 +1,20 @@
+-- The ambient environment functions.
+--
+-- These wrap natives both backends have always implemented, but nothing bound
+-- them to a Vela name, so the arguments the README promises were unreachable.
+-- What is pinned here is mostly that the names exist and are typed as stated;
+-- the runner passes no arguments, which makes the values themselves fixed.
+--
+-- `read_line` is left out on purpose: it would consume the test runner's own
+-- standard input. `clock_ms` is left out because it is not reproducible.
+
+let main () =
+  print (int_to_string (arg_count ()));
+
+  -- Out of range reads as empty rather than stopping the program.
+  print ("[" ^ arg_get 0 ^ "]");
+  print ("[" ^ arg_get 99 ^ "]");
+
+  -- Typed as ordinary functions, so they compose like any other.
+  let describe n = if n == 0 then "none" else int_to_string n in
+  print (describe (arg_count ()))

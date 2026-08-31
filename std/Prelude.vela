@@ -19,6 +19,23 @@ extern show : a -> String = "show"
 extern panic : String -> b = "panic"
 
 -- ==========================================================================
+-- Environment
+-- ==========================================================================
+
+-- The arguments after the program name, counted and indexed from zero. An
+-- index outside the range gives "" rather than stopping the program, so a
+-- missing argument reads the same as an empty one.
+extern arg_count : Unit -> Int = "arg_count"
+extern arg_get : Int -> String = "arg_get"
+
+-- One line from standard input, without its newline. At end of input this is
+-- "" too, so a reader that must tell the difference should track it itself.
+extern read_line : Unit -> String = "read_line"
+
+-- Milliseconds since the Unix epoch. Wall clock, so it can go backwards.
+extern clock_ms : Unit -> Int = "clock_ms"
+
+-- ==========================================================================
 -- Comparison
 -- ==========================================================================
 
